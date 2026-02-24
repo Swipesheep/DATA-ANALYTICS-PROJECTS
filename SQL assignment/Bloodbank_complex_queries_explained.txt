@@ -1,0 +1,324 @@
+-- ============================================================
+--   BLOOD BANK SQL PROJECT — COMPLEX QUERIES EXPLAINED
+--   Sorted from Most Complex → Least Complex
+-- ============================================================
+
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- COMPLEXITY TIER: ★★★★★  VERY COMPLEX
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q15. Stored Procedure — RegisterDonation
+-- WHY COMPLEX:
+--   • Not just a query — it's a full program inside the DB
+--   • Uses IN/OUT parameters (inputs + an output message)
+--   • Has DECLARE variables to store temporary values
+--   • Contains IF/ELSE logic to decide eligibility
+--   • Runs 3 INSERT statements in sequence:
+--       Step 1 → Insert health screening record
+--       Step 2 → Insert donation record (only if eligible)
+--       Step 3 → Insert into blood inventory (only if eligible)
+--   • Uses LAST_INSERT_ID() to chain the three inserts together
+--   • Uses a CASE expression to calculate expiry date
+--     based on donation type (Whole Blood=42d, Plasma=365d, etc.)
+--   • Uses DELIMITER $$ to allow semicolons inside the procedure
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   You call this procedure once with donor health data.
+--   It automatically decides if the donor is eligible,
+--   records the screening, records the donation, and
+--   adds the blood unit to inventory — all in one step.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q17. VIEW — vw_DonorEligibility
+-- WHY COMPLEX:
+--   • Uses a correlated subquery inside a CASE expression —
+--     a query inside a query inside a condition
+--   • The subquery runs separately for EACH donor row
+--     to find their most recent screening result:
+--       (SELECT is_eligible FROM DonorHealthScreening
+--        WHERE donor_id = d.donor_id
+--        ORDER BY screening_date DESC LIMIT 1)
+--   • The CASE has 3 conditions checked in order:
+--       1. Is the donor marked inactive?
+--       2. Did they fail their last health screening?
+--       3. Has it been less than 56 days since last donation?
+--       4. Otherwise → Eligible
+--   • Uses LEFT JOIN so donors with zero donations still appear
+--   • Uses GROUP BY with MAX() to find the most recent donation
+--   • Uses DATEDIFF() to calculate days since last donation
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Creates a reusable summary table showing each donor's
+--   current eligibility status and when they last donated.
+--   You can just query: SELECT * FROM vw_DonorEligibility
+-- ─────────────────────────────────────────────────────────
+
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- COMPLEXITY TIER: ★★★★☆  COMPLEX
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q2. Total Stock vs Pending Requests (Supply vs Demand)
+-- WHY COMPLEX:
+--   • Uses CTEs (WITH clause) — two named temporary tables:
+--       Supply CTE → calculates available blood per group
+--       Demand CTE → calculates pending request units per group
+--   • Uses FULL OUTER JOIN — keeps rows from BOTH sides
+--     even if one side has no match (e.g., a blood group
+--     has supply but no demand, or demand but no supply)
+--   • Uses COALESCE() to replace NULL with 0 so math works
+--     (NULL - 5 would break without COALESCE)
+--   • Calculates net_balance = supply minus demand
+--   • Uses a CASE to label each blood group:
+--       SHORTAGE / OUT OF STOCK / Sufficient
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Compares how much blood is available vs how much
+--   has been requested but not yet fulfilled.
+--   Flags which blood groups are running short.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q11. Blood Group Compatibility Check
+-- WHY COMPLEX:
+--   • Uses a subquery inside the WHERE clause
+--   • The subquery uses a VALUES() table constructor —
+--     an inline mini-table listing compatible blood groups:
+--       SELECT compatible_group FROM (
+--           VALUES ('B+'), ('B-'), ('O+'), ('O-')
+--       ) AS compat(compatible_group)
+--   • The outer query then filters inventory to only show
+--     units from blood groups in that inline table
+--   • Blood compatibility rules are hardcoded inline
+--     (B+ recipient can receive from B+, B-, O+, O-)
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Given a recipient's blood type (e.g., B+),
+--   find all available inventory units that are
+--   compatible and safe to transfuse to them.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q3. Donors with Blood-Borne Diseases
+-- WHY COMPLEX:
+--   • Uses string concatenation (|| operator) inside CASE
+--     to build a single "detected_diseases" column by
+--     combining up to 5 disease flags into one string:
+--       CASE WHEN has_hiv THEN 'HIV ' ELSE '' END ||
+--       CASE WHEN has_hepatitis_b THEN 'Hepatitis-B ' ELSE '' END || ...
+--   • Each CASE produces a piece of text or empty string,
+--     and || joins them all together
+--   • Filters using multiple OR conditions in the WHERE clause
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Shows donors who tested positive for any disease,
+--   and lists all their diseases in one readable column
+--   like: "HIV Hepatitis-B"
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q16. VIEW — vw_BloodAvailability (Dashboard)
+-- WHY COMPLEX:
+--   • Uses a conditional SUM with CASE inside it:
+--       SUM(CASE WHEN DATEDIFF(expiry_date, CURDATE()) <= 7
+--           THEN 1 ELSE 0 END) AS expiring_within_7_days
+--     This counts only bags expiring within 7 days
+--     by treating each qualifying row as 1 and others as 0
+--   • Filters to only show non-expired, non-contaminated,
+--     available units simultaneously
+--   • Creates a VIEW so this is always live/up-to-date
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   A live dashboard view showing available blood by group
+--   and type, including a warning count for bags expiring
+--   within the next 7 days.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- COMPLEXITY TIER: ★★★☆☆  MODERATE
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q6. Donor Donation History & Eligibility Check
+-- WHY MODERATE:
+--   • Uses LEFT JOIN so donors with no donations still appear
+--   • Uses aggregate functions: COUNT(), MAX()
+--   • Uses DATEDIFF() to calculate days since last donation
+--   • Uses CASE with two conditions to determine eligibility:
+--       Inactive / Too Soon (< 56 days) / Eligible
+--   • GROUP BY is required because of the aggregates
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Shows each donor's donation history and tells you
+--   whether they are currently eligible to donate again
+--   (must wait 56 days between whole blood donations).
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q7. Hospital-wise Blood Request Analysis
+-- WHY MODERATE:
+--   • Uses conditional aggregation — SUM with CASE inside:
+--       SUM(CASE WHEN status = 'Fulfilled' THEN 1 ELSE 0 END)
+--     This counts rows matching a condition inside a SUM
+--   • Uses ROUND() to calculate fulfillment percentage
+--   • Uses LEFT JOIN so hospitals with no requests appear
+--   • Combines multiple metrics in one query
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   For each hospital, shows how many blood requests were
+--   made, fulfilled, pending, or rejected, plus a
+--   fulfillment percentage rate.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q10. Monthly Donation Trends
+-- WHY MODERATE:
+--   • Uses DATE_FORMAT() to group dates by year-month
+--   • Uses COUNT(DISTINCT) to count unique donors per month
+--   • Uses conditional SUM with CASE to split contaminated
+--     vs clean units in the same query
+--   • Requires a JOIN to BloodInventory to get contamination data
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Shows donation statistics grouped by month —
+--   how many donations, how many units, unique donors,
+--   and how many were contaminated vs clean.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q14. Donor Deferral Report
+-- WHY MODERATE:
+--   • Uses multiple CASE expressions to convert TRUE/FALSE
+--     flags into readable YES/NO columns
+--   • Filters only ineligible screenings (is_eligible = FALSE)
+--   • Joins three tables: Screening → Donors → BloodTypes
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Shows a report of all donors who were turned away
+--   after screening, and which disease(s) caused the deferral,
+--   displayed as YES/NO columns for each disease.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- COMPLEXITY TIER: ★★☆☆☆  STRAIGHTFORWARD
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q9. Transfusion Outcome Report
+-- WHY STRAIGHTFORWARD:
+--   • Pure JOIN query — 5 tables joined together
+--   • No aggregation, no subqueries, no CTEs
+--   • Just selects and displays columns from joined tables
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Shows the full record of every transfusion —
+--   who received it, which hospital, blood type,
+--   who administered it, and whether it was successful.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q13. Inventory Audit — Units by Status
+-- WHY STRAIGHTFORWARD:
+--   • Simple GROUP BY with COUNT and SUM
+--   • Groups by status (Available/Used/Expired etc.),
+--     blood group, and donation type
+--   • Single JOIN to BloodTypes
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Counts and totals inventory units broken down by their
+--   current status — like a stock audit report.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q12. Top Donors by Units Donated
+-- WHY STRAIGHTFORWARD:
+--   • Standard GROUP BY with COUNT and SUM
+--   • Uses MAX() for latest donation date
+--   • Two JOINs: Donors → BloodTypes → Donations
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Ranks all donors by how much blood they have donated
+--   in total, showing their blood group and last donation date.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q8. Critical & High Urgency Unfulfilled Requests
+-- WHY STRAIGHTFORWARD:
+--   • Simple WHERE filter: status='Pending' AND urgency IN (...)
+--   • Uses DATEDIFF() to show days remaining
+--   • Uses LEFT JOIN for recipient (may be NULL for hospital requests)
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Lists all blood requests that are still unfulfilled
+--   and marked as Critical or High urgency,
+--   so staff can prioritise them immediately.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q5. Blood Units Expiring Within 10 Days
+-- WHY STRAIGHTFORWARD:
+--   • Simple WHERE with BETWEEN CURDATE() and DATE_ADD()
+--   • Single JOIN to BloodTypes
+--   • Uses DATEDIFF() to show days remaining
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Lists blood units about to expire in the next 10 days
+--   so staff can urgently find recipients before wastage.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q4. Contaminated Blood Units in Inventory
+-- WHY STRAIGHTFORWARD:
+--   • Simple WHERE: is_contaminated = TRUE
+--   • Three JOINs to trace back to the donor name
+--   • No aggregation or subqueries
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Lists all blood units flagged as contaminated,
+--   along with the donor name and contamination reason.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ─────────────────────────────────────────────────────────
+-- Q1. Current Blood Availability by Group & Type
+-- WHY STRAIGHTFORWARD:
+--   • Basic GROUP BY with COUNT and SUM
+--   • WHERE filters: available, not contaminated, not expired
+--   • Single JOIN to BloodTypes
+-- WHAT IT DOES IN SIMPLE TERMS:
+--   Shows the current live stock of blood available
+--   in the bank, grouped by blood group and donation type.
+-- ─────────────────────────────────────────────────────────
+
+
+-- ============================================================
+--  QUICK REFERENCE SUMMARY TABLE
+-- ============================================================
+--
+--  Query   Description                          Complexity
+--  ──────  ───────────────────────────────────  ──────────
+--  Q15     Stored Procedure (RegisterDonation)  ★★★★★
+--  Q17     VIEW: Donor Eligibility              ★★★★★
+--  Q2      Supply vs Demand (CTE + FULL JOIN)   ★★★★☆
+--  Q11     Blood Compatibility Check            ★★★★☆
+--  Q3      Donors with Diseases                 ★★★★☆
+--  Q16     VIEW: Blood Availability Dashboard   ★★★★☆
+--  Q6      Donor History & Eligibility          ★★★☆☆
+--  Q7      Hospital-wise Request Analysis       ★★★☆☆
+--  Q10     Monthly Donation Trends              ★★★☆☆
+--  Q14     Donor Deferral Report                ★★★☆☆
+--  Q9      Transfusion Outcome Report           ★★☆☆☆
+--  Q13     Inventory Audit by Status            ★★☆☆☆
+--  Q12     Top Donors by Units                  ★★☆☆☆
+--  Q8      Urgent Unfulfilled Requests          ★★☆☆☆
+--  Q5      Expiring Blood Units                 ★★☆☆☆
+--  Q4      Contaminated Units                   ★★☆☆☆
+--  Q1      Current Blood Stock Summary          ★★☆☆☆
+--
+-- ============================================================
