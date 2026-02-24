@@ -52,22 +52,11 @@ This repository contains a comprehensive analytics solution for e-commerce custo
 
 ---
 
-### 3. **SQL Scripts** (`sql_ecommerce_analytics.sql`)
+### 3. **SQL Scripts** (`sql_bloodbank_analytics.sql`)
 **Enterprise-grade SQL implementation:**
 - 🏗️ **Database Schema** - Star schema with fact and dimension tables
-- 🔄 **ETL Procedures** - Data loading and transformation
+- 🔄 **ETL Procedures** - Data loading and transfbormation
 - 📊 **10 Analytical Queries:**
-  1. Customer Retention Rate by Cohort
-  2. Revenue Analysis by Category & Country
-  3. Monthly Revenue Trend with Growth Rate
-  4. Customer Lifetime Value Analysis
-  5. Churn Risk Scoring
-  6. Product Affinity Analysis (Market Basket)
-  7. Top Performing Products
-  8. Customer Demographics & Behavior
-  9. Weekend vs Weekday Sales
-  10. Customer Acquisition Trends
-- 👁️ **Views** - Customer 360 and Daily Sales Dashboard
 - ✅ **Data Quality Checks**
 - ⚡ **Performance Optimization**
 
